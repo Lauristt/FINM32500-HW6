@@ -1,0 +1,37 @@
+# Design Patterns in Financial Software Architecture: Design Report
+
+## 1. Overview
+
+This report details the object-oriented design patterns employed in this financial analytics and trading simulation system. The project's architecture was designed to be modular, extensible, and maintainable, leveraging a suite of creational, structural, and behavioral patterns to solve common problems in financial software.
+
+Each pattern was chosen to address a specific challenge, such as object creation, data structure, or algorithmic behavior, resulting in a system that is loosely coupled and highly cohesive.
+
+## 2. Creational Patterns
+
+Creational patterns abstract the object-instantiation process, making the system more flexible in *what*, *how*, and *when* objects are created.
+
+| Pattern | Rationale (Why we used it) | Tradeoffs |
+| :--- | :--- | :--- |
+| **Factory** | **Problem:** We needed to create various `Instrument` objects (Stock, Bond, ETF) from raw data (e.g., a CSV row) without hard-coding `if/elif` logic in the main program. <br><br> **Solution:** `InstrumentFactory` encapsulates this creation logic. To add a new instrument type (e.g., `Option`), we only need to update the factory, not the code that *uses* the factory. | **Pro:** Decouples the client (e.g., `main.py`) from concrete classes. Promotes the Open/Closed Principle. <br><br> **Con:** Increases the number of classes. The factory can become a complex "god object" if it needs to manage too many types. |
+| **Singleton** | **Problem:** System-wide configuration (logging level, file paths, default strategy) needed to be accessed from multiple, disconnected modules (e.g., `main.py`, `strategy.py`, `reporting.py`). <br><br> **Solution:** The `Config` singleton provides a single, global point of access, ensuring all modules read from the exact same configuration instance. | **Pro:** Guarantees a single instance and provides easy global access. <br><br> **Con:** Introduces global state, which can make unit testing difficult (modules become coupled to the global config). It can be considered an "anti-pattern" in systems that rely heavily on dependency injection. |
+| **Builder** | **Problem:** Our `Portfolio` objects are complex, nested structures defined in a JSON file, containing metadata, lists of positions, and lists of sub-portfolios. <br><br> **Solution:** `PortfolioBuilder` provides a clean, fluent API to construct this tree-like object step-by-step. The `build_from_dict` method encapsulates the complex logic of parsing the nested JSON. | **Pro:** Separates complex object construction from its representation. Allows for fine-grained control over the creation process. <br><br> **Con:** Requires a separate `Builder` class for each complex object, which adds verbosity to the codebase. |
+
+## 3. Structural Patterns
+
+Structural patterns are concerned with how classes and objects are composed to form larger, flexible structures.
+
+| Pattern | Rationale (Why we used it) | Tradeoffs |
+| :--- | :--- | :--- |
+| **Decorator** | **Problem:** We wanted to add analytical functions (Volatility, Beta, Drawdown) to `Instrument` objects without modifying the `Instrument` or `Stock` classes themselves. <br><br> **Solution:** `VolatilityDecorator`, `BetaDecorator`, etc., "wrap" a base `Instrument` object. They implement the same interface and dynamically add their own logic to the `get_metrics()` method, allowing us to stack analytics. | **Pro:** Extremely flexible for adding responsibilities to objects dynamically. Avoids a "class explosion" of subclasses. <br><br> **Con:** Can lead to many small, hard-to-manage classes. The client code can become complex when wrapping multiple decorators. |
+| **Adapter** | **Problem:** We receive market data from multiple sources in different formats (`external_data_yahoo.json`, `external_data_bloomberg.xml`, `market_data.csv`). <br><br> **Solution:** `YahooFinanceAdapter`, `BloombergXMLAdapter`, and `CSVMarketDataAdapter` all implement a common interface. They wrap the external data and convert (adapt) it into our standard, internal `MarketDataPoint` objects. | **Pro:** Integrates incompatible interfaces seamlessly. `TradingEngine` only needs to know about `MarketDataPoint`, not about JSON or XML. <br><br> **Con:** Adds a layer of indirection. Requires a new adapter for every new data source. |
+| **Composite** | **Problem:** A portfolio can contain both individual positions (leaves) and sub-portfolios (composites), which themselves contain positions. We needed to treat both uniformly. <br><br> **Solution:** We defined a `PortfolioComponent` interface with a `get_value()` method. `Position` (leaf) and `PortfolioGroup` (composite) both implement it. This allows us to call `get_value()` on the top-level portfolio and have it recursively sum the value of all components in the tree. | **Pro:** Simplifies client code by providing a unified interface for individual objects and compositions. <br><br> **Con:** Can make the design overly general. It's sometimes difficult to restrict the types of components that can be added to a composite. |
+
+## 4. Behavioral Patterns
+
+Behavioral patterns are concerned with algorithms and the assignment of responsibilities between objects, especially complex control flow.
+
+| Pattern | Rationale (Why we used it) | Tradeoffs |
+| :--- | :--- | :--- |
+| **Strategy** | **Problem:** The `TradingEngine` needs to support interchangeable trading algorithms (e.g., Mean Reversion, Breakout) without being coupled to them. <br><br> **Solution:** We defined an abstract `Strategy` interface with a `generate_signals()` method. The engine holds an instance of a *concrete* strategy. We can swap strategies at runtime without changing the engine's code. | **Pro:** Decouples the algorithm from the client that uses it. Makes it easy to add new strategies. <br><br> **Con:** Increases the number of objects. The client must be aware of the different strategies to select the right one. |
+| **Observer** | **Problem:** When the `TradingEngine` generates a signal, we need to notify other, unrelated modules (like a `Logger` or an `Alerter`) without the engine knowing they exist. <br><br> **Solution:** The `TradingEngine` (as a `SignalPublisher`) maintains a list of `Observer` objects. When a signal is generated, it simply calls `notify()`, which iterates through its list and calls `update()` on each observer. | **Pro:** Achieves extreme loose coupling. The publisher and subscribers are completely independent. <br><br> **Con:** Notifications are sent in an unpredictable order. Can lead to complex, hard-to-debug update chains if observers trigger other observers. |
+| **Command** | **Problem:** We needed to encapsulate a "trade" as an object, log it, and—most importantly—support undo/redo functionality. <br><br> **Solution:** `ExecuteOrderCommand` encapsulates all information needed to perform *and* reverse a trade. The `CommandInvoker` manages a history of these command objects, allowing it to call `undo()` on the last executed command, which simply performs the opposite transaction. | **Pro:** Decouples the invoker from the action. Supports complex operations like undo, redo, and transaction logging. <br><br> **Con:** Can result in a large number of command classes for complex systems. Can be overkill for simple operations. |
